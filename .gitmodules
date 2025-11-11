@@ -1,0 +1,3 @@
+[submodule "icm45686_imu"]
+	path = icm45686_imu
+	url = https://github.com/nikhil-robinson/InvenSense_icm45686.git

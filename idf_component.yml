@@ -1,0 +1,11 @@
+version: "1.0.0"
+description: InvenSense ICM45686 library compatible with ESP-IDF
+url: https://github.com/nikhil-robinson/icm45686_idf
+repository: https://github.com/nikhil-robinson/icm45686_idf.git
+documentation: https://github.com/tdk-invn-oss/motion.mcu.icm45686.driver
+issues: https://github.com/nikhil-robinson/icm45686_idf/issues
+dependencies:
+  ## Required IDF version
+  idf:
+    version: ">=5.2"
+  cmake_utilities: "0.*"

@@ -1,0 +1,5 @@
+dependencies:
+    idf: ">=5.0"
+    icm45686_idf:
+      version: "*"
+      override_path: "../../../"
