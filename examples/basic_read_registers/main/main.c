@@ -39,7 +39,7 @@ static void init_spi(void)
 }
 
 
-static int  icm45686_read_regs(uint8_t reg, uint8_t* buf, uint32_t len)
+static int IRAM_ATTR icm45686_read_regs(uint8_t reg, uint8_t* buf, uint32_t len)
 {
 	static uint8_t tx_buffer[SPI_BUFFER_SIZE];
 	static uint8_t rx_buffer[SPI_BUFFER_SIZE];
@@ -59,7 +59,7 @@ static int  icm45686_read_regs(uint8_t reg, uint8_t* buf, uint32_t len)
 }
 
 
-static int  icm45686_write_regs(uint8_t reg, const uint8_t* buf, uint32_t len)
+static int IRAM_ATTR icm45686_write_regs(uint8_t reg, const uint8_t* buf, uint32_t len)
 {
 	static uint8_t tx_buffer[SPI_BUFFER_SIZE];
     if (!buf || !len || (len + 1) > SPI_BUFFER_SIZE) {
@@ -97,7 +97,12 @@ static void imu_init(void)
     {
         icm45686_data_t icm_data;
         icm45686_get_register_data(&icm45686_handle, &icm_data);
-        vTaskDelay(pdMS_TO_TICKS(1000));
+
+        ESP_LOGI(TAG, "Accel: X=%d Y=%d Z=%d | Gyro: X=%d Y=%d Z=%d | Temp: %d",
+                 icm_data.accel_data[0], icm_data.accel_data[1], icm_data.accel_data[2],
+                 icm_data.gyro_data[0], icm_data.gyro_data[1], icm_data.gyro_data[2],
+                 icm_data.temp_data);
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 
 }
@@ -105,5 +110,6 @@ static void imu_init(void)
 void app_main(void)
 {
     init_spi();
+    vTaskDelay(pdMS_TO_TICKS(3)); // Let IMU power stabilize
     imu_init();
 }

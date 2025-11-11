@@ -1,6 +1,5 @@
 #include "icm45686.h"
 
-
 #define TAG "ICM45686"
 
 #define CLK_IN_TIMER LEDC_TIMER_0
@@ -9,9 +8,6 @@
 #define CLK_IN_DUTY_RES LEDC_TIMER_8_BIT
 #define CLK_IN_DUTY (128)
 #define CLK_IN_FREQUENCY (32000) // 32000Hz
-
-
-
 
 void inv_msg(int level, const char *str, ...)
 {
@@ -110,7 +106,7 @@ void icm45686_default_config(icm45686_config_t *config)
     config->gyro_odr = GYRO_CONFIG0_GYRO_ODR_6400_HZ;
     config->gyro_bw = IPREG_SYS1_REG_172_GYRO_UI_LPFBW_DIV_4;
     config->accel_lp_clk = SMC_CONTROL_0_ACCEL_LP_CLK_RCOSC;
-    config->ln_enable = false;
+    config->ln_enable = true;
     config->int_num = INV_IMU_INT1;
     config->irq_handler = NULL;
     config->enable_clkin = false;
@@ -134,16 +130,26 @@ int icm45686_init(const icm45686_config_t *config, icm45686_handle_t *icm45686)
     inv_imu_int_state_t int_config;
     rc = 0;
 
+    if (icm45686->imu_dev.transport.serif_type == UI_SPI3 || icm45686->imu_dev.transport.serif_type == UI_SPI4)
+    {
+        drive_config0_t drive_config0;
+        drive_config0.pads_spi_slew = DRIVE_CONFIG0_PADS_SPI_SLEW_TYP_10NS;
+        rc |= inv_imu_write_reg(&icm45686->imu_dev, DRIVE_CONFIG0, 1, (uint8_t *)&drive_config0);
+        SI_CHECK_RC(rc);
+        delay_us(2); /* Takes effect 1.5 us after the register is programmed */
+    }
+
     /* WHOAMI check */
     rc |= inv_imu_get_who_am_i(&icm45686->imu_dev, &whoami);
     SI_CHECK_RC(rc);
     if (whoami != INV_IMU_WHOAMI)
     {
-        INV_MSG(INV_MSG_LEVEL_ERROR, "Erroneous WHOAMI value.");
-        INV_MSG(INV_MSG_LEVEL_ERROR, "  - Read 0x%02x", whoami);
-        INV_MSG(INV_MSG_LEVEL_ERROR, "  - Expected 0x%02x", INV_IMU_WHOAMI);
+        ESP_LOGE(TAG, "Erroneous WHOAMI value.");
+        ESP_LOGE(TAG, "  - Read 0x%02x", whoami);
+        ESP_LOGE(TAG, "  - Expected 0x%02x", INV_IMU_WHOAMI);
         return INV_IMU_ERROR;
     }
+    ESP_LOGI(TAG, "WHOAMI check passed. Value: 0x%02x", whoami);
 
     rc |= inv_imu_soft_reset(&icm45686->imu_dev);
     SI_CHECK_RC(rc);
@@ -175,6 +181,7 @@ int icm45686_init(const icm45686_config_t *config, icm45686_handle_t *icm45686)
         rc |= inv_imu_set_accel_fsr(&icm45686->imu_dev, config->accel_fsr);
         rc |= inv_imu_set_accel_frequency(&icm45686->imu_dev, config->accel_odr);
         rc |= inv_imu_set_accel_ln_bw(&icm45686->imu_dev, config->accel_bw);
+        SI_CHECK_RC(rc);
     }
 
     /* Gyroscope configuration */
@@ -183,6 +190,7 @@ int icm45686_init(const icm45686_config_t *config, icm45686_handle_t *icm45686)
         rc |= inv_imu_set_gyro_fsr(&icm45686->imu_dev, config->gyro_fsr);
         rc |= inv_imu_set_gyro_frequency(&icm45686->imu_dev, config->gyro_odr);
         rc |= inv_imu_set_gyro_ln_bw(&icm45686->imu_dev, config->gyro_bw);
+        SI_CHECK_RC(rc);
     }
 
     /* LP clock selection */
@@ -196,6 +204,8 @@ int icm45686_init(const icm45686_config_t *config, icm45686_handle_t *icm45686)
             rc |= inv_imu_set_accel_mode(&icm45686->imu_dev, PWR_MGMT0_ACCEL_MODE_LN);
         if (config->gyro_enable)
             rc |= inv_imu_set_gyro_mode(&icm45686->imu_dev, PWR_MGMT0_GYRO_MODE_LN);
+
+        SI_CHECK_RC(rc);
     }
     else
     {
@@ -203,24 +213,26 @@ int icm45686_init(const icm45686_config_t *config, icm45686_handle_t *icm45686)
             rc |= inv_imu_set_accel_mode(&icm45686->imu_dev, PWR_MGMT0_ACCEL_MODE_LP);
         if (config->gyro_enable)
             rc |= inv_imu_set_gyro_mode(&icm45686->imu_dev, PWR_MGMT0_GYRO_MODE_LP);
+
+        SI_CHECK_RC(rc);
     }
 
-    if(config->irq_handler != NULL && config->irq_pin != GPIO_NUM_NC)
-	{
-		gpio_set_direction(config->irq_pin, GPIO_MODE_INPUT);
-		gpio_set_pull_mode(config->irq_pin, GPIO_PULLUP_ONLY);
-		gpio_install_isr_service(0);
-		gpio_isr_handler_add(config->irq_pin, config->irq_handler, NULL);
-		gpio_set_intr_type(config->irq_pin, GPIO_INTR_POSEDGE);
-		gpio_intr_enable(config->irq_pin);
-	}
+    if (config->irq_handler != NULL && config->irq_pin != GPIO_NUM_NC)
+    {
+        gpio_set_direction(config->irq_pin, GPIO_MODE_INPUT);
+        gpio_set_pull_mode(config->irq_pin, GPIO_PULLUP_ONLY);
+        gpio_install_isr_service(0);
+        gpio_isr_handler_add(config->irq_pin, config->irq_handler, NULL);
+        gpio_set_intr_type(config->irq_pin, GPIO_INTR_POSEDGE);
+        gpio_intr_enable(config->irq_pin);
+    }
 
     SI_CHECK_RC(rc);
     return INV_IMU_OK;
 }
 
 void icm45686_clk_in_init(gpio_num_t clk_in_pin)
-{   
+{
     // Prepare and then apply the LEDC PWM timer configuration
     ledc_timer_config_t ledc_timer = {
         .speed_mode = CLK_IN_MODE,
