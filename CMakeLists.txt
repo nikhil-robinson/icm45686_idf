@@ -8,6 +8,7 @@ idf_component_register(
             icm45686_imu/icm45686/imu/inv_imu_selftest.c 
             icm45686_imu/icm45686/imu/inv_imu_transport.c
     INCLUDE_DIRS "." "icm45686_imu/icm45686/imu/"
+    REQUIRES driver esp_timer
 )
 
 

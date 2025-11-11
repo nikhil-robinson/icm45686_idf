@@ -1,5 +1,6 @@
 dependencies:
     idf: ">=5.0"
+    espressif/spi_bus: =*
     icm45686_idf:
       version: "*"
       override_path: "../../../"

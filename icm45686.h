@@ -12,7 +12,7 @@
 #include "icm45686_imu/icm45686/imu/inv_imu_driver.h"
 #include "icm45686_imu/icm45686/imu/inv_imu_edmp_memmap.h"
 #include "icm45686_imu/icm45686/imu/inv_imu_edmp.h"
-#include "icm45686_imu/icm45686/imu/inv_imu_regmap_be.h"
+// #include "icm45686_imu/icm45686/imu/inv_imu_regmap_be.h"
 #include "icm45686_imu/icm45686/imu/inv_imu_regmap_le.h"
 #include "icm45686_imu/icm45686/imu/inv_imu_selftest.h"
 #include "icm45686_imu/icm45686/imu/inv_imu_transport.h"
@@ -52,7 +52,6 @@ extern "C"
         if (si_print_error_if_any(rc))                                           \
         {                                                                        \
             INV_MSG(INV_MSG_LEVEL_ERROR, "At %s (line %d)", __FILE__, __LINE__); \
-            vTaskDelay((100));                                                   \
             return rc;                                                           \
         }                                                                        \
     } while (0)
@@ -84,6 +83,13 @@ extern "C"
         inv_imu_device_t imu_dev; /* Driver structure */
     } icm45686_handle_t;
 
+    typedef struct
+    {
+        int16_t accel_data[3];
+        int16_t gyro_data[3];
+        int16_t temp_data;
+    } icm45686_data_t;
+
     void inv_msg(int level, const char *str, ...);
     int si_print_error_if_any(int rc);
 
@@ -112,7 +118,7 @@ extern "C"
     int icm45686_set_accel_ln_bw(icm45686_handle_t *icm45686, ipreg_sys2_reg_131_accel_ui_lpfbw_t bw);
     int icm45686_set_gyro_ln_bw(icm45686_handle_t *icm45686, ipreg_sys1_reg_172_gyro_ui_lpfbw_sel_t bw);
 
-    int icm45686_get_register_data(icm45686_handle_t *icm45686, inv_imu_sensor_data_t *data);
+    int icm45686_get_register_data(icm45686_handle_t *icm45686, icm45686_data_t *data);
 
     int icm45686_set_fifo_config(icm45686_handle_t *icm45686, const inv_imu_fifo_config_t *fifo_config);
     int icm45686_get_fifo_config(icm45686_handle_t *icm45686, inv_imu_fifo_config_t *fifo_config);

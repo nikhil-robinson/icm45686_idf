@@ -94,17 +94,20 @@ void icm45686_default_config(icm45686_config_t *config)
 
     memset(config, 0, sizeof(icm45686_config_t));
 
-    config->transport.serif_type = UI_SPI3;
+    config->transport.serif_type = UI_SPI4;
     config->transport.sleep_us = delay_us;
     config->transport.read_reg = NULL;
     config->transport.write_reg = NULL;
     config->accel_enable = true;
-    config->accel_fsr = ACCEL_CONFIG0_ACCEL_UI_FS_SEL_4_G;
-    config->accel_odr = ACCEL_CONFIG0_ACCEL_ODR_50_HZ;
+    config->int_pin_config.int_polarity = INTX_CONFIG2_INTX_POLARITY_HIGH;
+    config->int_pin_config.int_mode = INTX_CONFIG2_INTX_MODE_PULSE;
+    config->int_pin_config.int_drive = INTX_CONFIG2_INTX_DRIVE_PP;
+    config->accel_fsr = ACCEL_CONFIG0_ACCEL_UI_FS_SEL_16_G;
+    config->accel_odr = ACCEL_CONFIG0_ACCEL_ODR_6400_HZ;
     config->accel_bw = IPREG_SYS2_REG_131_ACCEL_UI_LPFBW_DIV_4;
     config->gyro_enable = true;
     config->gyro_fsr = GYRO_CONFIG0_GYRO_UI_FS_SEL_2000_DPS;
-    config->gyro_odr = GYRO_CONFIG0_GYRO_ODR_50_HZ;
+    config->gyro_odr = GYRO_CONFIG0_GYRO_ODR_6400_HZ;
     config->gyro_bw = IPREG_SYS1_REG_172_GYRO_UI_LPFBW_DIV_4;
     config->accel_lp_clk = SMC_CONTROL_0_ACCEL_LP_CLK_RCOSC;
     config->ln_enable = false;
@@ -112,6 +115,7 @@ void icm45686_default_config(icm45686_config_t *config)
     config->irq_handler = NULL;
     config->enable_clkin = false;
     config->clkin_pin = GPIO_NUM_NC;
+    ESP_LOGI(TAG, "Default ICM45686 configuration applied.");
 }
 
 int icm45686_init(const icm45686_config_t *config, icm45686_handle_t *icm45686)
@@ -129,10 +133,6 @@ int icm45686_init(const icm45686_config_t *config, icm45686_handle_t *icm45686)
     uint8_t whoami = 0;
     inv_imu_int_state_t int_config;
     rc = 0;
-
-    /* Initialize transport */
-    rc |= inv_imu_init_transport(&icm45686->imu_dev, config->transport);
-    SI_CHECK_RC(rc);
 
     /* WHOAMI check */
     rc |= inv_imu_get_who_am_i(&icm45686->imu_dev, &whoami);
@@ -205,18 +205,14 @@ int icm45686_init(const icm45686_config_t *config, icm45686_handle_t *icm45686)
             rc |= inv_imu_set_gyro_mode(&icm45686->imu_dev, PWR_MGMT0_GYRO_MODE_LP);
     }
 
-    /* Optional interrupt handler */
-    if (config->irq_handler)
-        inv_imu_register_interrupt_callback(&icm45686->imu_dev, config->int_num, config->irq_handler);
-
-    if(config->irq_handler != NULL && config->int_num != GPIO_NUM_NC)
+    if(config->irq_handler != NULL && config->irq_pin != GPIO_NUM_NC)
 	{
-		gpio_set_direction(config->int_num, GPIO_MODE_INPUT);
-		gpio_set_pull_mode(config->int_num, GPIO_PULLUP_ONLY);
+		gpio_set_direction(config->irq_pin, GPIO_MODE_INPUT);
+		gpio_set_pull_mode(config->irq_pin, GPIO_PULLUP_ONLY);
 		gpio_install_isr_service(0);
-		gpio_isr_handler_add(config->int_num, config->irq_handler, NULL);
-		gpio_set_intr_type(config->int_num, GPIO_INTR_POSEDGE);
-		gpio_intr_enable(config->int_num);
+		gpio_isr_handler_add(config->irq_pin, config->irq_handler, NULL);
+		gpio_set_intr_type(config->irq_pin, GPIO_INTR_POSEDGE);
+		gpio_intr_enable(config->irq_pin);
 	}
 
     SI_CHECK_RC(rc);
@@ -265,10 +261,10 @@ int icm45686_deinit(icm45686_handle_t *icm45686)
     SI_CHECK_RC(rc);
 
     /* Remove GPIO ISR if configured */
-    if (config->irq_handler != NULL && config->int_num != GPIO_NUM_NC)
+    if (config->irq_handler != NULL && config->irq_pin != GPIO_NUM_NC)
     {
-        gpio_isr_handler_remove(config->int_num);
-        gpio_intr_disable(config->int_num);
+        gpio_isr_handler_remove(config->irq_pin);
+        gpio_intr_disable(config->irq_pin);
     }
 
     /* Put sensors into OFF mode */
@@ -282,17 +278,13 @@ int icm45686_deinit(icm45686_handle_t *icm45686)
     if (config->enable_clkin)
     {
         rc |= inv_imu_adv_disable_clkin_rtc(&icm45686->imu_dev);
-        rc |= inv_imu_adv_set_int2_pin_usage(&icm45686->imu_dev, IOC_PAD_SCENARIO_OVRD_INT2_CFG_OVRD_VAL_GPIO);
-        icm45686_clk_in_deinit(config->clkin_pin);
+        // rc |= inv_imu_adv_set_int2_pin_usage(&icm45686->imu_dev, IOC_PAD_SCENARIO_OVRD_INT2_CFG_OVRD_VAL_CLKIN);
+        // icm45686_clk_in_deinit(config->clkin_pin);
     }
 #endif
 
     /* Optionally perform soft reset to return IMU to known state */
     rc |= inv_imu_soft_reset(&icm45686->imu_dev);
-    SI_CHECK_RC(rc);
-
-    /* Deinitialize transport (SPI/I2C cleanup) */
-    rc |= inv_imu_deinit_transport(&icm45686->imu_dev);
     SI_CHECK_RC(rc);
 
     /* Clear handle memory for safety */
@@ -385,11 +377,17 @@ int icm45686_set_gyro_ln_bw(icm45686_handle_t *icm45686, ipreg_sys1_reg_172_gyro
     return inv_imu_set_gyro_ln_bw(&icm45686->imu_dev, bw);
 }
 
-int icm45686_get_register_data(icm45686_handle_t *icm45686, inv_imu_sensor_data_t *data)
+int icm45686_get_register_data(icm45686_handle_t *icm45686, icm45686_data_t *data)
 {
     if (icm45686 == NULL || data == NULL)
         return INV_IMU_ERROR_BAD_ARG;
-    return inv_imu_get_register_data(&icm45686->imu_dev, data);
+
+    inv_imu_sensor_data_t d;
+    int rc = inv_imu_get_register_data(&icm45686->imu_dev, &d);
+    memcpy(data->accel_data, d.accel_data, sizeof(d.accel_data));
+    memcpy(data->gyro_data, d.gyro_data, sizeof(d.gyro_data));
+    data->temp_data = d.temp_data;
+    return rc;
 }
 
 int icm45686_set_fifo_config(icm45686_handle_t *icm45686, const inv_imu_fifo_config_t *cfg)
